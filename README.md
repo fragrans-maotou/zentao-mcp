@@ -6,16 +6,32 @@
 
 ## 快速上手
 
-### 1. 配置信息
+把下面这段复制到 MCP 客户端配置里，只改三处环境变量即可使用，无需本地克隆或编译。
 
-通过环境变量连接你自己的禅道服务器。复制 `config.example.json` 为 MCP 客户端配置，并填入实际地址与账号。
+```json
+{
+  "mcpServers": {
+    "zentao": {
+      "command": "npx",
+      "args": ["-y", "git+https://github.com/fragrans-maotou/zentao-mcp.git"],
+      "env": {
+        "ZENTAO_BASE": "http://your-zentao-host/zentao",
+        "ZENTAO_ACCOUNT": "your_account",
+        "ZENTAO_PASSWORD": "your_password"
+      }
+    }
+  }
+}
+```
 
 环境变量说明：
 - `ZENTAO_BASE`: 禅道访问根地址，例如 `http://your-zentao-host/zentao`（必填）
 - `ZENTAO_ACCOUNT`: 禅道登录账号（配置后，所有工具均支持自动静默登录）
 - `ZENTAO_PASSWORD`: 禅道登录密码
 
-### 2. 编译与测试
+首次启动时 `npx` 会从 GitHub 拉取并安装依赖，之后会走本地缓存。
+
+### 本地开发与测试
 
 ```bash
 # 安装依赖
@@ -32,25 +48,6 @@ npm run test:unit
 
 # 仅运行集成测试 (依赖外部真实服务)
 npm run test:integration
-```
-
-### 3. MCP 客户端配置示例 (`config.example.json`)
-
-```json
-{
-  "mcpServers": {
-    "zentao": {
-      "command": "node",
-      "args": ["dist/index.js"],
-      "cwd": "/path/to/zentao",
-      "env": {
-        "ZENTAO_BASE": "http://your-zentao-host/zentao",
-        "ZENTAO_ACCOUNT": "your_account",
-        "ZENTAO_PASSWORD": "your_password"
-      }
-    }
-  }
-}
 ```
 
 ---

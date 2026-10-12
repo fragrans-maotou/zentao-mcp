@@ -1,9 +1,8 @@
 {
   "mcpServers": {
     "zentao": {
-      "command": "node",
-      "args": ["dist/index.js"],
-      "cwd": "/path/to/zentao",
+      "command": "npx",
+      "args": ["-y", "git+https://github.com/fragrans-maotou/zentao-mcp.git"],
       "env": {
         "ZENTAO_BASE": "http://your-zentao-host/zentao",
         "ZENTAO_ACCOUNT": "your_account",

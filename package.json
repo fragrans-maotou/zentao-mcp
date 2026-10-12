@@ -1,11 +1,14 @@
 {
-  "name": "zentao",
+  "name": "zentao-mcp",
   "version": "1.0.0",
   "description": "ZenTao MCP Server",
   "main": "dist/index.js",
   "bin": {
-    "zentao": "dist/index.js"
+    "zentao-mcp": "dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "scripts": {
     "build": "tsc",
@@ -30,5 +33,8 @@
   "devDependencies": {
     "@types/node": "^26.6.3",
     "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
