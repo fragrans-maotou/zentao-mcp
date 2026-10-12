@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "zentao": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "cwd": "/path/to/zentao",
+      "env": {
+        "ZENTAO_BASE": "http://your-zentao-host/zentao",
+        "ZENTAO_ACCOUNT": "your_account",
+        "ZENTAO_PASSWORD": "your_password"
+      }
+    }
+  }
+}
