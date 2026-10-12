@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { asError, postZentaoForm, zentaoApi, zentaoOk } from "../client.js";
+import { customFieldsFromStory, formContentFromStory, isCustomFieldKey, preservedAttributes, STANDARD_UPDATE_KEYS, } from "../storyPreserve.js";
 export function registerStoryTools(server) {
     registerCreateStory(server);
     registerGetStory(server);
@@ -8,7 +9,7 @@ export function registerStoryTools(server) {
     registerUpdateStory(server);
 }
 function registerCreateStory(server) {
-    server.tool("create_story", "在禅道中创建新需求（Story）。支持指定产品ID、需求标题、描述、验收标准、优先级等。", {
+    server.tool("create_story", "在禅道中创建新需求（Story）。支持指定产品ID、需求标题、描述、验收标准、优先级等。业务流程推荐：创建时 plan 可留空，待需求生成完成后，调用 list_product_plans 查询计划列表，向用户确认后通过 link_story_to_plan 关联到指定产品计划。", {
         product: z.number().int().describe("所属产品 ID（必填，可使用 list_products 查询）"),
         title: z.string().min(1).describe("需求名称/标题（必填）"),
         spec: z.string().optional().describe("需求详细描述，可包含背景与业务说明"),
@@ -20,7 +21,7 @@ function registerCreateStory(server) {
             .default("feature")
             .describe("需求类型，默认 feature"),
         module: z.number().int().optional().describe("所属模块 ID"),
-        plan: z.number().int().optional().describe("关联的产品计划 ID"),
+        plan: z.number().int().optional().describe("关联的产品计划 ID（可选，常规流程为需求生成后通过 link_story_to_plan 关联）"),
         assignedTo: z.string().optional().describe("指派给的用户账号"),
         source: z.string().optional().describe("需求来源，如 customer, user, po 等"),
     }, async (args) => {
@@ -35,6 +36,15 @@ function registerCreateStory(server) {
                 method: "POST",
                 body: payload,
             });
+            // 若创建接口返回了包含 ID 的简要数据，尝试回查完整详情以丰富返回内容
+            if (res?.id) {
+                try {
+                    const detail = await zentaoApi(`/stories/${res.id}`);
+                    if (detail)
+                        return zentaoOk(detail);
+                }
+                catch { }
+            }
             return zentaoOk(res);
         }
         catch (err) {
@@ -43,7 +53,7 @@ function registerCreateStory(server) {
     });
 }
 function registerGetStory(server) {
-    server.tool("get_story", "根据需求 ID (story_id) 获取单个禅道需求的完整信息，包含标题、描述(spec)、验收标准(verify)、版本号、状态等。", {
+    server.tool("get_story", "根据需求 ID (story_id) 获取单个禅道需求的完整信息，包含标题、描述(spec)、验收标准(verify)、版本号、状态、所属计划(plan)、模块、优先级等所有详情。", {
         story_id: z.number().int().describe("禅道需求 ID"),
     }, async ({ story_id }) => {
         try {
@@ -75,7 +85,7 @@ function registerListStories(server) {
     });
 }
 function registerChangeStory(server) {
-    server.tool("change_story", "变更需求内容（官方变更流程，升级版本号并触发重新评审）。支持变更评审者、研发需求名称、描述、需求分析(verify)、医疗风险和数据安全、需数据安全评审、概要设计、开发自测、备注等。", {
+    server.tool("change_story", "变更需求内容（官方变更流程，升级版本号并触发重新评审）。支持变更评审者、研发需求名称、描述、需求分析(verify)、医疗风险和数据安全、需数据安全评审、概要设计、开发自测、备注等。变更后完整返回所有详情。", {
         story_id: z.number().int().describe("需要变更的需求 ID"),
         title: z.string().optional().describe("研发需求名称（标题）"),
         spec: z.string().optional().describe("需求描述详细内容"),
@@ -120,6 +130,13 @@ function registerChangeStory(server) {
                 method: "PUT",
                 body,
             });
+            // 变更成功后，回查最新完整需求详情（包含新版本号、未变动的plan/module等），全量返回给用户
+            try {
+                const detail = await zentaoApi(`/stories/${story_id}`);
+                if (detail)
+                    return zentaoOk(detail);
+            }
+            catch { }
             return zentaoOk(res ?? { success: true, message: "需求变更已提交成功", story_id });
         }
         catch (err) {
@@ -128,19 +145,11 @@ function registerChangeStory(server) {
     });
 }
 function registerUpdateStory(server) {
-    server.tool("update_story", "直接编辑需求（非官方变更流程，不升级版本号、不触发重新评审）。支持修改概要设计、开发自测、备注、医疗风险和数据安全*、需数据安全评审，以及基础属性与描述等。", {
+    server.tool("update_story", "编辑/更新需求属性（自动先查后合，绝不删除或清空所属计划 plan 等未修改字段；所有详情完整返回，修改的返回修改后的值，未修改的完整保留）。支持更新计划、优先级、模块、指派人、需求类型、概要设计、开发自测等属性。", {
         story_id: z.number().int().describe("需要更新的需求 ID"),
-        tthldesign: z.string().optional().describe("概要设计 (HLD)"),
-        ttdevtest: z.string().optional().describe("开发自测说明"),
-        bz: z.string().optional().describe("备注 (bz)"),
-        ttmedicalrisk: z.string().optional().describe("医疗风险和数据安全*"),
-        ttisdatasafe: z.string().optional().describe("需数据安全评审（\"1\" 为是，\"0\" 为否）"),
-        title: z.string().optional().describe("研发需求名称（标题）"),
-        spec: z.string().optional().describe("需求描述详细内容"),
-        verify: z.string().optional().describe("需求分析 / 验收标准"),
+        plan: z.number().int().optional().describe("关联的产品计划 ID（若不修改请留空，原计划将被自动完整保留；若需修改请传入新计划 ID）"),
         pri: z.number().int().min(1).max(4).optional().describe("优先级：1 (最高) 到 4 (最低)"),
         module: z.number().int().optional().describe("所属模块 ID"),
-        plan: z.number().int().optional().describe("关联的产品计划 ID"),
         assignedTo: z.string().optional().describe("指派给的用户账号"),
         category: z
             .enum(["feature", "interface", "performance", "safe", "experience", "other"])
@@ -148,54 +157,67 @@ function registerUpdateStory(server) {
             .describe("需求类型"),
         source: z.string().optional().describe("需求来源"),
         estimate: z.number().optional().describe("预计工时 (小时)"),
+        title: z.string().optional().describe("研发需求名称（标题）"),
+        spec: z.string().optional().describe("需求描述详细内容"),
+        verify: z.string().optional().describe("需求分析 / 验收标准"),
+        tthldesign: z.string().optional().describe("概要设计 (HLD)"),
+        ttdevtest: z.string().optional().describe("开发自测说明"),
+        bz: z.string().optional().describe("备注 (bz)"),
+        ttmedicalrisk: z.string().optional().describe("医疗风险和数据安全*"),
+        ttisdatasafe: z.string().optional().describe("需数据安全评审（\"1\" 为是，\"0\" 为否）"),
     }, async ({ story_id, ...updates }) => {
-        const body = {};
+        const inputUpdates = {};
         for (const [key, value] of Object.entries(updates)) {
             if (value !== undefined && value !== null) {
-                body[key] = value;
+                inputUpdates[key] = value;
             }
         }
-        if (Object.keys(body).length === 0) {
+        if (Object.keys(inputUpdates).length === 0) {
             return asError(new Error("请至少提供一个要编辑更新的字段"));
         }
         try {
-            const customFieldKeys = [
-                "tthldesign",
-                "ttdevtest",
-                "bz",
-                "ttmedicalrisk",
-                "ttisdatasafe",
-                "ttnetsafe",
-            ];
-            const hasCustom = Object.keys(body).some((k) => customFieldKeys.includes(k));
+            let currentStory;
+            try {
+                currentStory = await zentaoApi(`/stories/${story_id}`);
+            }
+            catch (err) {
+                const detail = err instanceof Error ? err.message : String(err);
+                return asError(new Error(`无法读取需求 #${story_id} 的当前详情，已中止更新以免覆盖已有字段：${detail}`));
+            }
+            const preserved = preservedAttributes(currentStory);
+            const restBody = { ...preserved };
+            for (const [k, v] of Object.entries(inputUpdates)) {
+                if (STANDARD_UPDATE_KEYS.includes(k)) {
+                    restBody[k] = v;
+                }
+            }
+            const hasCustom = Object.keys(inputUpdates).some(isCustomFieldKey);
             if (hasCustom) {
-                await postZentaoForm(`/story-edit-${story_id}.json`, body);
+                const formBody = {
+                    ...formContentFromStory(currentStory),
+                    ...preserved,
+                    ...customFieldsFromStory(currentStory),
+                    ...inputUpdates,
+                };
+                await postZentaoForm(`/story-edit-${story_id}.json`, formBody);
             }
-            const standardKeys = [
-                "title",
-                "spec",
-                "verify",
-                "pri",
-                "module",
-                "plan",
-                "assignedTo",
-                "category",
-                "source",
-                "estimate",
-            ];
-            const standardBody = {};
-            for (const k of standardKeys) {
-                if (body[k] !== undefined)
-                    standardBody[k] = body[k];
-            }
-            let res;
-            if (Object.keys(standardBody).length > 0) {
-                res = await zentaoApi(`/stories/${story_id}`, {
+            if (Object.keys(restBody).length > 0) {
+                await zentaoApi(`/stories/${story_id}`, {
                     method: "PUT",
-                    body: standardBody,
+                    body: restBody,
                 });
             }
-            return zentaoOk(res ?? { success: true, story_id });
+            let latestStory;
+            try {
+                latestStory = await zentaoApi(`/stories/${story_id}`);
+            }
+            catch { }
+            return zentaoOk(latestStory ?? {
+                ...currentStory,
+                ...restBody,
+                ...inputUpdates,
+                id: story_id,
+            });
         }
         catch (err) {
             return asError(err);

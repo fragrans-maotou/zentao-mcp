@@ -125,17 +125,48 @@ npm run test:integration
 - **底层接口**：`PUT {ZENTAO_BASE}/api.php/v1/stories/{story_id}/change`
 
 #### `update_story` (更新需求属性)
-- **说明**：编辑需求的基本属性字段（非需求内容变更流程）。用于更新优先级、所属模块、关联计划、指派人、需求类型、需求来源等。
+- **说明**：编辑/更新需求属性字段（采用先查后合机制，自动保留未修改的字段，绝不冲掉或清空原有所属计划 `plan`；修改的返回修改后的值，未修改的完整保留）。
 - **参数**：
   - `story_id` (number, 必填)：需求 ID
+  - `plan` (number, 可选)：关联计划 ID（若不修改请留空，原计划将自动完整保留）
   - `pri` (number, 可选)：优先级 (1-4)
   - `module` (number, 可选)：所属模块 ID
-  - `plan` (number, 可选)：关联计划 ID
   - `assignedTo` (string, 可选)：指派给的账号
   - `category` (string, 可选)：需求类型
   - `source` (string, 可选)：需求来源
   - `estimate` (number, 可选)：预估工时
+  - `tthldesign` (string, 可选)：概要设计
+  - `ttdevtest` (string, 可选)：开发自测说明
+  - `bz` (string, 可选)：备注
+  - `ttmedicalrisk` (string, 可选)：医疗风险和数据安全
+  - `ttisdatasafe` (string, 可选)：需数据安全评审 ("1"/"0")
 - **底层接口**：`PUT {ZENTAO_BASE}/api.php/v1/stories/{story_id}`
+
+---
+
+### 4. 产品计划领域 (`src/tools/plan.ts`)
+
+#### `list_product_plans` (获取产品计划列表)
+- **说明**：获取指定产品下的产品计划列表（包含计划 ID、名称、起止日期、状态等）。推荐工作流：需求生成/创建完成后，AI 调用本工具查询该产品下的计划列表，向用户询问确认选择哪一个计划，或直接关联用户指定的计划。
+- **参数**：
+  - `product_id` (number, 必填)：所属产品 ID
+  - `page` (number, 可选, 默认 1)：页码
+  - `limit` (number, 可选, 默认 20)：每页条数
+  - `status` (string, 可选)：状态筛选（如 all, doing, wait, done）
+- **底层接口**：`GET {ZENTAO_BASE}/api.php/v1/products/{product_id}/productplans`
+
+#### `get_plan` (获取产品计划详情)
+- **说明**：根据计划 ID 获取单个产品计划的详细信息（包含关联的需求、Bug、起止日期等）。
+- **参数**：
+  - `plan_id` (number, 必填)：产品计划 ID
+- **底层接口**：`GET {ZENTAO_BASE}/api.php/v1/productplans/{plan_id}`
+
+#### `link_story_to_plan` (需求关联到产品计划)
+- **说明**：将已生成或创建好的需求关联到指定产品计划（业务流程：需求先创建完成，再调用本工具关联到计划上）。优先走官方关联接口，失败时再回退到更新需求 `plan` 字段，并保留易被清空的属性。
+- **参数**：
+  - `story_id` (number, 必填)：需求 ID
+  - `plan_id` (number, 必填)：目标产品计划 ID
+- **底层接口**：`PUT {ZENTAO_BASE}/api.php/v1/productplans/{plan_id}/linkstories`（404 时回退 `PUT .../stories/{story_id}`）
 
 ---
 
@@ -154,6 +185,7 @@ zentao/
 │   └── tools/           # 按业务领域拆分的工具目录
 │       ├── auth.ts      # 认证领域：login
 │       ├── product.ts   # 产品领域：list_products, get_product
+│       ├── plan.ts      # 计划领域：list_product_plans, get_plan, link_story_to_plan
 │       ├── story.ts     # 需求领域：create_story, get_story, list_stories, change_story, update_story
 │       └── index.ts     # 统一汇聚注册导出
 └── test/
@@ -161,6 +193,7 @@ zentao/
     ├── unit/            # Mock 单元测试
     │   ├── auth.test.js
     │   ├── product.test.js
+    │   ├── plan.test.js
     │   └── story.test.js
     └── integration/     # 依赖外部环境的集成测试
         └── live.test.js

@@ -16,12 +16,11 @@ function setupMockServer(handler) {
 test("unit/story: create_story 成功创建需求", { timeout: 15_000 }, async () => {
   const captured = {};
   const { server, base } = await setupMockServer(async (req, res) => {
-    captured.method = req.method;
-    captured.url = req.url;
-    captured.headers = req.headers;
-    captured.body = await readBody(req);
-
     if (req.method === "POST" && req.url === "/zentao/api.php/v1/stories") {
+      captured.method = req.method;
+      captured.url = req.url;
+      captured.headers = req.headers;
+      captured.body = await readBody(req);
       res.writeHead(201, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
@@ -161,11 +160,10 @@ test("unit/story: list_stories 查询产品下的需求列表", { timeout: 15_00
 test("unit/story: change_story 变更需求描述并升级版本", { timeout: 15_000 }, async () => {
   const captured = {};
   const { server, base } = await setupMockServer(async (req, res) => {
-    captured.method = req.method;
-    captured.url = req.url;
-    captured.body = await readBody(req);
-
     if (req.method === "PUT" && req.url === "/zentao/api.php/v1/stories/101/change") {
+      captured.method = req.method;
+      captured.url = req.url;
+      captured.body = await readBody(req);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
@@ -242,22 +240,32 @@ test("unit/story: change_story 参数为空时提示拦截", { timeout: 15_000 }
   }
 });
 
-test("unit/story: update_story 更新需求基本属性", { timeout: 15_000 }, async () => {
+test("unit/story: update_story 更新需求属性时自动保留原所属计划(plan)与未修改字段", { timeout: 15_000 }, async () => {
   const captured = {};
+  let currentStory = {
+    id: 101,
+    title: "扫码登录需求",
+    product: 1,
+    plan: 88,
+    module: 5,
+    pri: 3,
+    category: "feature",
+    assignedTo: "original_dev",
+  };
+
   const { server, base } = await setupMockServer(async (req, res) => {
-    captured.method = req.method;
-    captured.url = req.url;
-    captured.body = await readBody(req);
+    if (req.method === "GET" && req.url === "/zentao/api.php/v1/stories/101") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(currentStory));
+      return;
+    }
 
     if (req.method === "PUT" && req.url === "/zentao/api.php/v1/stories/101") {
+      captured.putBody = await readBody(req);
+      const parsedBody = JSON.parse(captured.putBody);
+      currentStory = { ...currentStory, ...parsedBody };
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          id: 101,
-          pri: 1,
-          assignedTo: "dev_lead",
-        })
-      );
+      res.end(JSON.stringify(currentStory));
       return;
     }
     res.writeHead(404);
@@ -281,16 +289,104 @@ test("unit/story: update_story 更新需求基本属性", { timeout: 15_000 }, a
     });
 
     assert.notEqual(result.isError, true);
-    assert.equal(captured.method, "PUT");
-    assert.equal(captured.url, "/zentao/api.php/v1/stories/101");
-    assert.deepEqual(JSON.parse(captured.body), {
+    assert.deepEqual(JSON.parse(captured.putBody), {
+      plan: 88,
+      module: 5,
       pri: 1,
+      category: "feature",
       assignedTo: "dev_lead",
     });
 
     const parsed = JSON.parse(result.content[0].text);
     assert.equal(parsed.pri, 1);
     assert.equal(parsed.assignedTo, "dev_lead");
+    assert.equal(parsed.plan, 88);
+    assert.equal(parsed.module, 5);
+  } finally {
+    await client.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("unit/story: update_story 读取当前需求失败时中止更新", { timeout: 15_000 }, async () => {
+  const captured = {};
+  const { server, base } = await setupMockServer(async (req, res) => {
+    if (req.method === "PUT") {
+      captured.putCalled = true;
+    }
+    res.writeHead(404);
+    res.end(JSON.stringify({ error: "not found" }));
+  });
+
+  const client = await connectMcp({
+    ZENTAO_BASE: base,
+    ZENTAO_ACCOUNT: "test_user",
+    ZENTAO_PASSWORD: "test_password",
+  });
+
+  try {
+    const result = await client.callTool({
+      name: "update_story",
+      arguments: {
+        story_id: 101,
+        pri: 1,
+      },
+    });
+
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /已中止更新/);
+    assert.equal(captured.putCalled, undefined);
+  } finally {
+    await client.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("unit/story: update_story 将 assignedTo 对象规范化为账号字符串", { timeout: 15_000 }, async () => {
+  const captured = {};
+  const currentStory = {
+    id: 101,
+    title: "扫码登录需求",
+    plan: "88,90",
+    module: 5,
+    assignedTo: { account: "original_dev", realname: "原开发" },
+  };
+
+  const { server, base } = await setupMockServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/zentao/api.php/v1/stories/101") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(currentStory));
+      return;
+    }
+    if (req.method === "PUT" && req.url === "/zentao/api.php/v1/stories/101") {
+      captured.putBody = await readBody(req);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ id: 101, pri: 2, plan: "88,90", assignedTo: "original_dev" }));
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+
+  const client = await connectMcp({
+    ZENTAO_BASE: base,
+    ZENTAO_ACCOUNT: "test_user",
+    ZENTAO_PASSWORD: "test_password",
+  });
+
+  try {
+    const result = await client.callTool({
+      name: "update_story",
+      arguments: { story_id: 101, pri: 2 },
+    });
+
+    assert.notEqual(result.isError, true);
+    assert.deepEqual(JSON.parse(captured.putBody), {
+      plan: "88,90",
+      module: 5,
+      pri: 2,
+      assignedTo: "original_dev",
+    });
   } finally {
     await client.close();
     await new Promise((resolve) => server.close(resolve));

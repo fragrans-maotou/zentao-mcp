@@ -3,7 +3,7 @@ export interface ZenTaoStory {
   product: number;
   branch?: number;
   module?: number;
-  plan?: number;
+  plan?: number | string;
   source?: string;
   sourceNote?: string;
   fromBug?: number;
@@ -20,7 +20,7 @@ export interface ZenTaoStory {
   verify?: string;
   openedBy?: string;
   openedDate?: string;
-  assignedTo?: string;
+  assignedTo?: string | { account?: string; realname?: string };
   assignedDate?: string;
   reviewedBy?: string;
   reviewedDate?: string;
@@ -53,12 +53,26 @@ export interface ZenTaoProduct {
   createdDate?: string;
 }
 
+export interface ZenTaoPlan {
+  id: number;
+  product: number;
+  branch?: number;
+  title: string;
+  desc?: string;
+  begin?: string;
+  end?: string;
+  status?: string;
+  stories?: unknown[];
+  bugs?: unknown[];
+}
+
 export interface ZenTaoPagination<T> {
   page: number;
   total: number;
   limit: number;
   products?: T[];
   stories?: T[];
+  plans?: T[];
 }
 
 export interface LoginResult {
