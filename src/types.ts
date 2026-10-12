@@ -73,6 +73,46 @@ export interface ZenTaoPagination<T> {
   products?: T[];
   stories?: T[];
   plans?: T[];
+  tasks?: T[];
+}
+
+export interface ZenTaoTask {
+  id: number;
+  project?: number;
+  execution: number;
+  executionID?: number;
+  module?: number;
+  story?: number;
+  storyVersion?: number;
+  name: string;
+  type: string;
+  pri?: number;
+  estimate?: number;
+  left?: number;
+  consumed?: number;
+  status?: "wait" | "doing" | "done" | "pause" | "cancel" | "closed" | string;
+  subStatus?: string;
+  color?: string;
+  mailto?: string[];
+  desc?: string;
+  version?: number;
+  openedBy?: string | { account?: string; realname?: string };
+  openedDate?: string;
+  assignedTo?: string | { account?: string; realname?: string };
+  assignedDate?: string;
+  estStarted?: string;
+  realStarted?: string;
+  deadline?: string;
+  finishedBy?: string | { account?: string; realname?: string };
+  finishedDate?: string;
+  canceledBy?: string;
+  canceledDate?: string;
+  closedBy?: string | { account?: string; realname?: string };
+  closedDate?: string;
+  closedReason?: string;
+  lastEditedBy?: string;
+  lastEditedDate?: string;
+  [key: string]: unknown;
 }
 
 export interface LoginResult {
@@ -87,3 +127,4 @@ export interface StoryChangeResult {
   spec?: string;
   verify?: string;
 }
+

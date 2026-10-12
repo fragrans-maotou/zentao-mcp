@@ -46,11 +46,59 @@ test("unit/plan: list_product_plans 查询指定产品下的计划列表", { tim
     });
 
     assert.notEqual(result.isError, true);
-    assert.match(captured.url, /\/zentao\/api\.php\/v1\/products\/1\/productplans\?/);
+    assert.match(captured.url, /\/zentao\/api\.php\/v1\/products\/1\/plans\?/);
     const parsed = JSON.parse(result.content[0].text);
     assert.equal(parsed.plans.length, 2);
     assert.equal(parsed.plans[0].id, 10);
     assert.equal(parsed.plans[0].title, "2026 Q4 迭代计划");
+  } finally {
+    await client.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("unit/plan: list_product_plans 在 /plans 404 时回退到 /productplans", { timeout: 15_000 }, async () => {
+  const captured = { urls: [] };
+  const { server, base } = await setupMockServer((req, res) => {
+    captured.urls.push(req.url);
+    if (req.url.startsWith("/zentao/api.php/v1/products/1/plans")) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "not found" }));
+      return;
+    }
+    if (req.url.startsWith("/zentao/api.php/v1/products/1/productplans")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          page: 1,
+          total: 1,
+          limit: 20,
+          plans: [{ id: 10, title: "兼容路径计划", status: "doing" }],
+        })
+      );
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+
+  const client = await connectMcp({
+    ZENTAO_BASE: base,
+    ZENTAO_ACCOUNT: "test_user",
+    ZENTAO_PASSWORD: "test_password",
+  });
+
+  try {
+    const result = await client.callTool({
+      name: "list_product_plans",
+      arguments: { product_id: 1 },
+    });
+
+    assert.notEqual(result.isError, true);
+    assert.ok(captured.urls.some((url) => url.startsWith("/zentao/api.php/v1/products/1/plans")));
+    assert.ok(captured.urls.some((url) => url.startsWith("/zentao/api.php/v1/products/1/productplans")));
+    const parsed = JSON.parse(result.content[0].text);
+    assert.equal(parsed.plans[0].title, "兼容路径计划");
   } finally {
     await client.close();
     await new Promise((resolve) => server.close(resolve));
@@ -105,7 +153,7 @@ test("unit/plan: get_plan 获取单个产品计划详情", { timeout: 15_000 }, 
 test("unit/plan: link_story_to_plan 优先调用官方 linkstories 接口", { timeout: 15_000 }, async () => {
   const captured = {};
   const { server, base } = await setupMockServer(async (req, res) => {
-    if (req.method === "PUT" && req.url === "/zentao/api.php/v1/productplans/10/linkstories") {
+    if (req.method === "POST" && req.url === "/zentao/api.php/v1/productplans/10/linkstories") {
       captured.body = await readBody(req);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ success: true }));

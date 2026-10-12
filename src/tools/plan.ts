@@ -24,16 +24,15 @@ export function registerPlanTools(server: McpServer) {
 
         try {
           const res = await zentaoApi<ZenTaoPagination<ZenTaoPlan> | ZenTaoPlan[]>(
-            `/products/${product_id}/productplans`,
+            `/products/${product_id}/plans`,
             { query }
           );
           return zentaoOk(res);
         } catch (err) {
-          // 若 /productplans 路径返回 404，兼容回退至 /plans
-          const errMsg = err instanceof Error ? err.message : String(err);
-          if (errMsg.includes("404")) {
+          // v1 主路径是 /plans；部分环境仍用 v2 风格 /productplans
+          if (isNotFoundError(err)) {
             const fallbackRes = await zentaoApi<ZenTaoPagination<ZenTaoPlan> | ZenTaoPlan[]>(
-              `/products/${product_id}/plans`,
+              `/products/${product_id}/productplans`,
               { query }
             );
             return zentaoOk(fallbackRes);
@@ -107,13 +106,13 @@ export function registerPlanTools(server: McpServer) {
 async function linkStoriesToPlan(plan_id: number, story_id: number): Promise<boolean> {
   const body = { stories: [story_id] };
   try {
-    await zentaoApi(`/productplans/${plan_id}/linkstories`, { method: "PUT", body });
+    await zentaoApi(`/productplans/${plan_id}/linkstories`, { method: "POST", body });
     return true;
   } catch (err) {
     if (!isNotFoundError(err)) throw err;
   }
   try {
-    await zentaoApi(`/plans/${plan_id}/linkstories`, { method: "PUT", body });
+    await zentaoApi(`/plans/${plan_id}/linkstories`, { method: "POST", body });
     return true;
   } catch (err) {
     if (!isNotFoundError(err)) throw err;

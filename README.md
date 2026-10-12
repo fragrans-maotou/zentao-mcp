@@ -153,7 +153,7 @@ npm run test:integration
   - `page` (number, 可选, 默认 1)：页码
   - `limit` (number, 可选, 默认 20)：每页条数
   - `status` (string, 可选)：状态筛选（如 all, doing, wait, done）
-- **底层接口**：`GET {ZENTAO_BASE}/api.php/v1/products/{product_id}/productplans`
+- **底层接口**：`GET {ZENTAO_BASE}/api.php/v1/products/{product_id}/plans`（404 时回退 `.../productplans`）
 
 #### `get_plan` (获取产品计划详情)
 - **说明**：根据计划 ID 获取单个产品计划的详细信息（包含关联的需求、Bug、起止日期等）。
@@ -166,7 +166,48 @@ npm run test:integration
 - **参数**：
   - `story_id` (number, 必填)：需求 ID
   - `plan_id` (number, 必填)：目标产品计划 ID
-- **底层接口**：`PUT {ZENTAO_BASE}/api.php/v1/productplans/{plan_id}/linkstories`（404 时回退 `PUT .../stories/{story_id}`）
+- **底层接口**：`POST {ZENTAO_BASE}/api.php/v1/productplans/{plan_id}/linkstories`（404 时回退 `PUT .../stories/{story_id}`）
+
+### 5. 任务领域 (`src/tools/task.ts`)
+
+#### `create_task` (创建任务)
+- **说明**：在禅道所属执行/迭代（Execution）下创建新任务（Task）。支持关联研发需求（Story）、所属模块、指派人、预计工时、开始与截止日期、优先级等。创建成功后自动回查并全量返回任务完整详情。
+- **参数**：
+  - `execution` (number, 必填)：所属执行/迭代 ID（对应 executionID）
+  - `name` (string, 必填)：任务名称/标题
+  - `type` (string, 可选, 默认 devel)：任务类型（如 `devel` 开发, `test` 测试, `design` 设计, `request` 需求, `study` 调研, `ui` UI设计, `misc` 其他）
+  - `assignedTo` (string, 可选)：指派给的用户账号
+  - `estimate` (number, 可选)：预计工时（小时）
+  - `story` (number, 可选)：关联的相关研发需求 ID
+  - `module` (number, 可选)：所属模块 ID
+  - `estStarted` (string, 可选)：预计开始日期（YYYY-MM-DD）
+  - `deadline` (string, 可选)：截止日期（YYYY-MM-DD）
+  - `pri` (number, 可选, 默认 3)：优先级 1~4
+  - `desc` (string, 可选)：任务描述或实现要求
+- **底层接口**：`POST {ZENTAO_BASE}/api.php/v1/executions/{execution}/tasks`
+
+#### `get_task` (获取任务详情)
+- **说明**：根据任务 ID 获取单个任务的完整详情（包含任务名称、类型、所属执行 execution、关联需求 story、指派人、状态、工时、优先级、截止日期、描述等全部信息）。
+- **参数**：
+  - `task_id` (number, 必填)：任务 ID
+- **底层接口**：`GET {ZENTAO_BASE}/api.php/v1/tasks/{task_id}`
+
+#### `update_task` (修改任务)
+- **说明**：编辑/修改任务属性。**采用 Fetch-and-Merge 先查后合保护策略**，先读取当前任务数据，未修改的字段（如所属执行、关联需求、模块、指派人等）自动完整保留提交，绝不因部分更新被清空；更新完成后回查并全量返回最新任务详情。
+- **参数**：
+  - `task_id` (number, 必填)：需要修改的任务 ID
+  - `name` (string, 可选)：任务名称/标题
+  - `execution` (number, 可选)：所属执行 ID（若不修改请留空，原执行将完整保留）
+  - `type` (string, 可选)：任务类型（如 devel, test, design 等）
+  - `assignedTo` (string, 可选)：指派给的用户账号
+  - `estimate` (number, 可选)：预计工时（小时）
+  - `story` (number, 可选)：关联的相关需求 ID（若不修改请留空，原需求将完整保留）
+  - `module` (number, 可选)：所属模块 ID
+  - `estStarted` (string, 可选)：预计开始日期（YYYY-MM-DD）
+  - `deadline` (string, 可选)：截止日期（YYYY-MM-DD）
+  - `pri` (number, 可选)：优先级 1~4
+  - `desc` (string, 可选)：任务描述或实现要求
+- **底层接口**：`PUT {ZENTAO_BASE}/api.php/v1/tasks/{task_id}`
 
 ---
 
@@ -187,6 +228,7 @@ zentao/
 │       ├── product.ts   # 产品领域：list_products, get_product
 │       ├── plan.ts      # 计划领域：list_product_plans, get_plan, link_story_to_plan
 │       ├── story.ts     # 需求领域：create_story, get_story, list_stories, change_story, update_story
+│       ├── task.ts      # 任务领域：create_task, get_task, update_task
 │       └── index.ts     # 统一汇聚注册导出
 └── test/
     ├── helper.js        # 测试辅助公共函数 (MockServer / McpClient)
@@ -194,7 +236,9 @@ zentao/
     │   ├── auth.test.js
     │   ├── product.test.js
     │   ├── plan.test.js
-    │   └── story.test.js
+    │   ├── story.test.js
+    │   └── task.test.js
     └── integration/     # 依赖外部环境的集成测试
         └── live.test.js
 ```
+
