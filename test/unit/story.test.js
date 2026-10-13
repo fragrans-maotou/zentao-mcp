@@ -489,6 +489,8 @@ test("unit/story: edit_draft_story 直改草稿需求并携带 lastEditedDate �
     assert.ok(captured.formBody.includes("verify="));
     // 验证包含状态 draft
     assert.ok(captured.formBody.includes("status=draft"));
+    // 验证包含 needNotReview=1 防拦截标记
+    assert.ok(captured.formBody.includes("needNotReview=1"));
 
     const data = JSON.parse(result.content[0].text);
     assert.equal(data.id, 47536);
@@ -601,4 +603,55 @@ test("unit/story: update_story 在 Web 编辑页全部失败时中止，避免�
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test("unit/story: edit_draft_story 在禅道服务端返回 result: fail 拒绝时准确抛出错误并提示原因", { timeout: 15_000 }, async () => {
+  const currentStory = {
+    id: 47536,
+    product: 48,
+    title: "草稿标题",
+    status: "draft",
+    spec: "旧描述",
+    lastEditedDate: "2026-10-13 10:34:25",
+  };
+
+  const { server, base } = await setupMockServer(async (req, res) => {
+    if (req.method === "GET" && req.url.startsWith("/zentao/api.php/v1/stories/47536")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(currentStory));
+      return;
+    }
+
+    if (req.method === "POST" && req.url.includes("story-edit-47536")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ result: "fail", message: { reviewer: ["评审人不能为空"] } }));
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  const client = await connectMcp({
+    ZENTAO_BASE: base,
+    ZENTAO_ACCOUNT: "test_user",
+    ZENTAO_PASSWORD: "test_password",
+  });
+
+  try {
+    const result = await client.callTool({
+      name: "edit_draft_story",
+      arguments: {
+        story_id: 47536,
+        spec: "新描述内容",
+      },
+    });
+
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /评审人不能为空/);
+  } finally {
+    await client.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 

@@ -186,31 +186,27 @@ async function applyStoryUpdates(story_id, updates) {
         const preserved = preservedAttributes(currentStory);
         // 判断是否需要通过 Web 端 story-edit 表单提交：
         // 当包含 spec(需求描述)、verify(验收标准/需求分析)、自定义扩展字段、或草稿状态修改时，
-        // 由于 REST API PUT 会静默忽略富文本字段，必须走 Web 编辑页接口，并带上 lastEditedDate 防并发编辑令牌
+        // 由于 REST API PUT 会静默忽略富文本字段，必须走 Web 编辑页接口，并带上 lastEditedDate 防并发编辑令牌与 needNotReview: 1
         const needWebForm = shouldSubmitStoryEditForm(currentStory, inputUpdates);
         if (needWebForm) {
             const formBody = buildStoryEditForm(currentStory, inputUpdates);
             await submitStoryEditForm(story_id, formBody);
+            // Web 端 story-edit 表单已全量保存（包含属性、计划、描述、验收标准与扩展字段），
+            // 严禁在此之后再次调用 REST PUT，否则 REST 接口会因缺少 spec/verify 字段而重置需求描述
         }
-        // 针对标准属性字段（如 pri, module, assignedTo, plan 等），同步调用 REST API PUT
-        const restBody = { ...preserved };
-        for (const [k, v] of Object.entries(inputUpdates)) {
-            if (STANDARD_UPDATE_KEYS.includes(k) &&
-                k !== "spec" &&
-                k !== "verify") {
-                restBody[k] = v;
+        else {
+            // 仅当非草稿且纯修改属性字段时，调用 REST API PUT
+            const restBody = { ...preserved };
+            for (const [k, v] of Object.entries(inputUpdates)) {
+                if (STANDARD_UPDATE_KEYS.includes(k)) {
+                    restBody[k] = v;
+                }
             }
-        }
-        if (Object.keys(restBody).length > 0) {
-            try {
+            if (Object.keys(restBody).length > 0) {
                 await zentaoApi(`/stories/${story_id}`, {
                     method: "PUT",
                     body: restBody,
                 });
-            }
-            catch (err) {
-                if (!needWebForm)
-                    throw err;
             }
         }
         // 更新后全量回查最新需求详情并返回
@@ -221,7 +217,6 @@ async function applyStoryUpdates(story_id, updates) {
         catch { }
         return zentaoOk(latestStory ?? {
             ...currentStory,
-            ...restBody,
             ...inputUpdates,
             id: story_id,
         });

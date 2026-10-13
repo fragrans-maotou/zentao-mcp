@@ -211,9 +211,24 @@ export async function postZentaoForm(path, formData) {
     }
     // 表单接口成功时可能返回 JSON，也可能返回 HTML 完成页
     try {
-        return JSON.parse(cleanText);
+        const parsed = JSON.parse(cleanText);
+        if (parsed && typeof parsed === "object") {
+            if (parsed.result === "fail" || parsed.status === "fail") {
+                let msg = parsed.message ?? parsed.error ?? cleanText;
+                if (typeof msg === "object" && msg !== null) {
+                    msg = Object.entries(msg)
+                        .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`)
+                        .join("; ");
+                }
+                throw new Error(`禅道表单提交被拒绝：${msg}`);
+            }
+        }
+        return parsed;
     }
-    catch {
+    catch (err) {
+        if (err instanceof Error && err.message.startsWith("禅道表单提交被拒绝")) {
+            throw err;
+        }
         return cleanText;
     }
 }

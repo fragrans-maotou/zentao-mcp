@@ -78,27 +78,45 @@ export function isCustomFieldKey(key) {
     return CUSTOM_FIELD_KEYS.includes(key);
 }
 export function buildStoryEditForm(currentStory, updates) {
+    const currentPlan = normalizePlan(currentStory.plan);
+    const targetPlan = updates.plan !== undefined ? normalizePlan(updates.plan) : currentPlan;
     const form = {
         product: currentStory.product,
         branch: currentStory.branch ?? 0,
-        module: currentStory.module ?? 0,
-        plan: normalizePlan(currentStory.plan) ?? 0,
-        source: currentStory.source ?? "",
+        module: updates.module !== undefined ? updates.module : (currentStory.module ?? 0),
+        plan: targetPlan !== undefined ? [targetPlan] : (currentPlan !== undefined ? [currentPlan] : [0]),
+        source: updates.source !== undefined ? updates.source : (currentStory.source ?? ""),
         sourceNote: currentStory.sourceNote ?? "",
-        title: currentStory.title ?? "",
-        category: currentStory.category ?? "feature",
-        pri: currentStory.pri ?? 3,
-        estimate: currentStory.estimate ?? 0,
-        status: currentStory.status ?? "draft",
+        title: updates.title !== undefined ? String(updates.title) : (currentStory.title ?? ""),
+        category: updates.category !== undefined ? updates.category : (currentStory.category ?? "feature"),
+        pri: updates.pri !== undefined ? updates.pri : (currentStory.pri ?? 3),
+        estimate: updates.estimate !== undefined ? updates.estimate : (currentStory.estimate ?? 0),
+        status: updates.status || currentStory.status || "draft",
         stage: currentStory.stage ?? "wait",
-        spec: currentStory.spec ?? "",
-        verify: currentStory.verify ?? "",
-        assignedTo: normalizeAssignedTo(currentStory.assignedTo) ?? "",
+        spec: updates.spec !== undefined ? String(updates.spec) : (currentStory.spec ?? ""),
+        verify: updates.verify !== undefined ? String(updates.verify) : (currentStory.verify ?? ""),
+        assignedTo: updates.assignedTo !== undefined
+            ? normalizeAssignedTo(updates.assignedTo) ?? ""
+            : normalizeAssignedTo(currentStory.assignedTo) ?? "",
         // 防并发编辑令牌：必须使用当前需求的最新编辑时间
         lastEditedDate: currentStory.lastEditedDate ?? "",
+        // 关键标记：草稿直改时必须带上 needNotReview: 1，否则禅道后端会以“评审人不能为空”拒绝保存
+        needNotReview: 1,
+        reviewer: [],
+        uid: "",
     };
     if (currentStory.stage) {
         form["stages[0]"] = currentStory.stage;
+    }
+    // 显式指定评审人时才关闭 needNotReview
+    if (updates.reviewer !== undefined) {
+        const revs = Array.isArray(updates.reviewer)
+            ? updates.reviewer.map(String)
+            : [String(updates.reviewer)];
+        form.reviewer = revs;
+        if (revs.length > 0) {
+            form.needNotReview = 0;
+        }
     }
     // 补上现有的自定义扩展字段
     const custom = customFieldsFromStory(currentStory);
@@ -110,13 +128,7 @@ export function buildStoryEditForm(currentStory, updates) {
     // 用用户传入的更新字段覆盖
     for (const [k, v] of Object.entries(updates)) {
         if (v !== undefined && v !== null) {
-            if (k === "assignedTo") {
-                form[k] = normalizeAssignedTo(v) ?? v;
-            }
-            else if (k === "plan") {
-                form[k] = normalizePlan(v) ?? v;
-            }
-            else {
+            if (isCustomFieldKey(k)) {
                 form[k] = v;
             }
         }
@@ -130,8 +142,8 @@ export function shouldSubmitStoryEditForm(currentStory, updates) {
     // 2. 如果包含自定义扩展字段（概要设计、自测说明、医疗风险等），必须通过 Web 表单提交
     if (Object.keys(updates).some(isCustomFieldKey))
         return true;
-    // 3. 如果当前需求是草稿状态（draft），且传入了标题等核心内容变更，直接走 Web 编辑表单直改草稿
-    if (currentStory.status === "draft" && updates.title !== undefined)
+    // 3. 如果当前需求是草稿状态（draft），统一走 Web 编辑表单直改，避免 REST PUT 的副作用与字段丢失
+    if (currentStory.status === "draft")
         return true;
     return false;
 }
