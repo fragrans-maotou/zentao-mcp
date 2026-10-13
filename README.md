@@ -6,7 +6,37 @@
 
 ## 快速上手
 
-把下面这段复制到 MCP 客户端配置里，只改三处环境变量即可使用，无需本地克隆或编译。
+本服务用 `npx` 从 GitHub 拉取并启动，使用前需要本机已安装 **Node.js（≥ 18）** 和 **Git**。安装这两个软件、以及拉取本公开仓库，**都不需要 GitHub 账号，也不用登录**。
+
+### 1. 安装 Node.js
+
+1. 打开 [https://nodejs.org/](https://nodejs.org/)，下载 LTS 安装包（Windows 选 `.msi`）。
+2. 一路下一步安装，保持勾选 **Add to PATH**。
+3. 安装完成后**重新打开**终端或 MCP 客户端，执行：
+
+```bash
+node -v
+npx -v
+```
+
+能看到版本号即可（Node 需 ≥ 18）。
+
+### 2. 安装 Git
+
+1. 打开 [https://git-scm.com/download/win](https://git-scm.com/download/win)，下载并安装 Git for Windows。
+2. 安装选项保持默认即可（会自动加入 PATH）。
+3. **不需要**注册或登录 GitHub。本仓库是公开的，`npx git+https://...` 只是匿名拉取，不会要账号密码。若安装后弹出 GitHub 登录窗口，关掉即可。
+4. 重新打开终端后执行：
+
+```bash
+git --version
+```
+
+能看到版本号即可。
+
+### 3. 配置 MCP 客户端
+
+把下面这段复制到 MCP 客户端配置里，只改三处环境变量。无需手动克隆或编译。
 
 ```json
 {
@@ -29,7 +59,11 @@
 - `ZENTAO_ACCOUNT`: 禅道登录账号（配置后，所有工具均支持自动静默登录）
 - `ZENTAO_PASSWORD`: 禅道登录密码
 
-首次启动时 `npx` 会从 GitHub 拉取仓库并安装依赖，之后走本地缓存。当前未发布到 npm，所以仓库里会带上编译后的 `dist/`；改完源码后请先 `npm run build`，再把生成的 JS 一起提交。
+### 4. 重启客户端
+
+保存配置后重启 MCP 客户端。首次启动时 `npx` 会从 GitHub 拉取仓库并安装依赖，之后走本地缓存。
+
+当前未发布到 npm，所以仓库里会带上编译后的 `dist/`；改完源码后请先 `npm run build`，再把生成的 JS 一起提交。仓库更新后，使用方需重启 MCP，或清一次 npx 缓存后再启动。
 
 ### 本地开发与测试
 
