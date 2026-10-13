@@ -21,7 +21,7 @@
     "zentao"
   ],
   "author": "猫头",
-  "license": "ISC",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/fragrans-maotou/zentao-mcp.git"
