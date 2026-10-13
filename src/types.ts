@@ -36,6 +36,12 @@ export interface ZenTaoStory {
   ttmedicalrisk?: string;
   ttisdatasafe?: string;
   reviewer?: string[] | string;
+  parent?: number;
+  ttplan?: string;
+  ttisperformance?: string;
+  ttisdesigncheck?: string;
+  ttnetsafe?: string;
+  [key: string]: unknown;
 }
 
 export interface ZenTaoProduct {

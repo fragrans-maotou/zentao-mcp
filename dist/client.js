@@ -1,3 +1,7 @@
+import net from "node:net";
+if (typeof net.setDefaultAutoSelectFamily === "function") {
+    net.setDefaultAutoSelectFamily(false);
+}
 let sessionToken = "";
 export function getEnvCredentials() {
     return {
@@ -195,6 +199,7 @@ export async function postZentaoForm(path, formData) {
         method: "POST",
         headers: {
             "Content-Type": "application/x-www-form-urlencoded",
+            "X-Requested-With": "XMLHttpRequest",
             Cookie: `zentaosid=${token};`,
             Token: token,
         },
@@ -208,6 +213,11 @@ export async function postZentaoForm(path, formData) {
     }
     if (!res.ok) {
         throw new Error(`请求失败 (${res.status})：${cleanText.slice(0, 300)}`);
+    }
+    // 检查服务端是否在 HTML 中返回 alert(...) 弹窗拒绝
+    const alertMatch = cleanText.match(/alert\s*\(\s*["']([^"']+)["']\s*\)/i);
+    if (alertMatch) {
+        throw new Error(`禅道表单提交被拒绝：${alertMatch[1]}`);
     }
     // 表单接口成功时可能返回 JSON，也可能返回 HTML 完成页
     try {

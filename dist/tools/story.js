@@ -244,14 +244,19 @@ function registerUpdateStory(server) {
         tthldesign: z.string().optional().describe("概要设计 (HLD)"),
         ttdevtest: z.string().optional().describe("开发自测说明"),
         bz: z.string().optional().describe("备注 (bz)"),
-        ttmedicalrisk: z.string().optional().describe("医疗风险和数据安全*"),
-        ttisdatasafe: z.string().optional().describe("需数据安全评审（\"1\" 为是，\"0\" 为否）"),
+        ttmedicalrisk: z.string().optional().describe("医疗风险和数据安全（默认为 \"无\"）"),
+        ttnetsafe: z.string().optional().describe("医疗风险和数据安全（默认为 \"无\"）"),
+        ttisdatasafe: z.string().optional().describe("需数据安全评审（\"1\" 为是，\"0\" 为否，默认 \"1\"）"),
+        ttplan: z.enum(["inplan", "outplan"]).optional().describe("计划性质：inplan (计划内，默认) 或 outplan (计划外)"),
+        ttisperformance: z.enum(["0", "1", "2"]).optional().describe("需提测演示：\"1\" (否，默认) 或 \"2\" (是)，传入 \"0\" 亦自动兼容映射为否"),
+        ttisdesigncheck: z.enum(["0", "1"]).optional().describe("需架构设计评审：\"1\" (是，默认) 或 \"0\" (否)"),
+        status: z.enum(["draft", "active"]).optional().describe("需求状态：draft (保持草稿) 或 active (激活需求)"),
     }, async ({ story_id, ...updates }) => {
         return applyStoryUpdates(story_id, updates);
     });
 }
 function registerEditDraftStory(server) {
-    server.tool("edit_draft_story", "直接编辑草稿需求内容（直改 spec 描述与 verify 验收标准，无版本号上升与重新评审副作用）。对应禅道 Web 端 story-edit 页面机制。自动提取并携带 lastEditedDate 防并发编辑令牌与 Web 会话 Cookie，支持修改需求描述、验收标准、标题、优先级、模块、类别、所属计划等，保存后全量返回最新详情。", {
+    server.tool("edit_draft_story", "直接编辑草稿需求内容（直改 spec 描述与 verify 验收标准，无版本号上升与重新评审副作用）。对应禅道 Web 端 story-edit 页面机制。自动提取并携带 lastEditedDate 防并发编辑令牌与 Web 会话 Cookie，已自动适配计划性质(ttplan)、提测演示(ttisperformance)、医疗风险(ttmedicalrisk/ttnetsafe)等必填字段默认值，支持修改需求描述、验收标准、标题、优先级、模块、类别、所属计划等，保存后全量返回最新详情。", {
         story_id: z.number().int().describe("需要编辑的草稿需求 ID"),
         title: z.string().optional().describe("需求标题"),
         spec: z.string().optional().describe("需求详细描述 (spec)"),
@@ -268,6 +273,13 @@ function registerEditDraftStory(server) {
         tthldesign: z.string().optional().describe("概要设计 (HLD)"),
         ttdevtest: z.string().optional().describe("开发自测说明"),
         bz: z.string().optional().describe("备注 (bz)"),
+        ttmedicalrisk: z.string().optional().describe("医疗风险和数据安全（默认为 \"无\"）"),
+        ttnetsafe: z.string().optional().describe("医疗风险和数据安全（默认为 \"无\"）"),
+        ttisdatasafe: z.string().optional().describe("需数据安全评审（\"1\" 为是，\"0\" 为否，默认 \"1\"）"),
+        ttplan: z.enum(["inplan", "outplan"]).optional().describe("计划性质：inplan (计划内，默认) 或 outplan (计划外)"),
+        ttisperformance: z.enum(["0", "1", "2"]).optional().describe("需提测演示：\"1\" (否，默认) 或 \"2\" (是)，传入 \"0\" 亦自动兼容映射为否"),
+        ttisdesigncheck: z.enum(["0", "1"]).optional().describe("需架构设计评审：\"1\" (是，默认) 或 \"0\" (否)"),
+        status: z.enum(["draft", "active"]).optional().default("draft").describe("保存状态：draft (默认保持草稿) 或 active (转为激活)"),
     }, async ({ story_id, ...updates }) => {
         return applyStoryUpdates(story_id, updates);
     });

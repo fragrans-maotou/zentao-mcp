@@ -491,6 +491,10 @@ test("unit/story: edit_draft_story 直改草稿需求并携带 lastEditedDate �
     assert.ok(captured.formBody.includes("status=draft"));
     // 验证包含 needNotReview=1 防拦截标记
     assert.ok(captured.formBody.includes("needNotReview=1"));
+    // 验证包含企业定制必填项默认补全：计划性质(inplan)、提测演示(1为否)、医疗风险(无)
+    assert.ok(captured.formBody.includes("ttplan=inplan"));
+    assert.ok(captured.formBody.includes("ttisperformance=1"));
+    assert.ok(captured.formBody.includes("ttnetsafe="));
 
     const data = JSON.parse(result.content[0].text);
     assert.equal(data.id, 47536);
