@@ -5,7 +5,7 @@ export function getEnvCredentials() {
         password: (process.env.ZENTAO_PASSWORD ?? "").trim(),
     };
 }
-function getBaseUrl() {
+export function getBaseUrl() {
     const base = (process.env.ZENTAO_BASE ?? "").trim();
     if (!base) {
         throw new Error("缺少禅道地址，请设置环境变量 ZENTAO_BASE，例如 http://your-zentao-host/zentao");
@@ -156,29 +156,65 @@ export async function zentaoApi(path, req = {}) {
         throw new Error(`服务器响应格式错误（非 JSON）：${cleanText.slice(0, 300)}`);
     }
 }
+export function buildPhpFormData(data) {
+    const params = new URLSearchParams();
+    function appendValue(prefix, value) {
+        if (value === undefined || value === null)
+            return;
+        if (Array.isArray(value)) {
+            for (const item of value) {
+                if (typeof item === "object" && item !== null) {
+                    appendValue(`${prefix}[]`, item);
+                }
+                else {
+                    params.append(`${prefix}[]`, String(item));
+                }
+            }
+        }
+        else if (typeof value === "object") {
+            for (const [subKey, subVal] of Object.entries(value)) {
+                appendValue(`${prefix}[${subKey}]`, subVal);
+            }
+        }
+        else {
+            params.append(prefix, String(value));
+        }
+    }
+    for (const [k, v] of Object.entries(data)) {
+        appendValue(k, v);
+    }
+    return params;
+}
 export async function postZentaoForm(path, formData) {
     const token = await ensureSessionToken();
     const base = getBaseUrl();
-    const url = `${base}${path.startsWith("/") ? path : `/${path}`}?zentaosid=${token}`;
-    const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(formData)) {
-        if (v !== undefined && v !== null) {
-            params.append(k, String(v));
-        }
-    }
+    const sep = path.includes("?") ? "&" : "?";
+    const url = `${base}${path.startsWith("/") ? path : `/${path}`}${sep}zentaosid=${token}`;
+    const bodyParams = buildPhpFormData(formData);
     const res = await fetch(url, {
         method: "POST",
         headers: {
             "Content-Type": "application/x-www-form-urlencoded",
+            Cookie: `zentaosid=${token};`,
+            Token: token,
         },
-        body: params.toString(),
+        body: bodyParams.toString(),
     });
-    const text = await res.text();
+    const rawText = await res.text();
+    const cleanText = rawText.replace(/^\uFEFF/, "").trim();
+    if (res.status === 401 || res.status === 403) {
+        clearSessionToken();
+        throw new Error("Token 无效或已过期，请检查 ZENTAO_ACCOUNT、ZENTAO_PASSWORD 或调用 login 重新登录");
+    }
+    if (!res.ok) {
+        throw new Error(`请求失败 (${res.status})：${cleanText.slice(0, 300)}`);
+    }
+    // 表单接口成功时可能返回 JSON，也可能返回 HTML 完成页
     try {
-        return JSON.parse(text);
+        return JSON.parse(cleanText);
     }
     catch {
-        return text;
+        return cleanText;
     }
 }
 export const zentaoOk = (data) => ({

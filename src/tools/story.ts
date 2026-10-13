@@ -253,7 +253,11 @@ function registerUpdateStory(server: McpServer) {
             ...customFieldsFromStory(currentStory),
             ...inputUpdates,
           };
-          await postZentaoForm(`/story-edit-${story_id}.json`, formBody);
+          try {
+            await postZentaoForm(`/story-edit-${story_id}.json`, formBody);
+          } catch {
+            // 表单接口不可用时仍继续 REST 更新标准字段
+          }
         }
 
         if (Object.keys(restBody).length > 0) {

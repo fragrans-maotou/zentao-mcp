@@ -66,6 +66,45 @@ export interface ZenTaoPlan {
   bugs?: unknown[];
 }
 
+export interface ZenTaoProject {
+  id: number;
+  project?: number;
+  model?: string;
+  type?: string;
+  lifetime?: string;
+  budget?: string;
+  budgetUnit?: string;
+  name: string;
+  code?: string;
+  begin?: string;
+  end?: string;
+  status?: string;
+  PM?: string | { account?: string; realname?: string };
+  desc?: string;
+  openedBy?: string;
+  openedDate?: string;
+  [key: string]: unknown;
+}
+
+export interface ZenTaoExecution {
+  id: number;
+  project?: number;
+  name: string;
+  code?: string;
+  type?: string;
+  lifetime?: string;
+  begin?: string;
+  end?: string;
+  status?: string;
+  PM?: string | { account?: string; realname?: string };
+  desc?: string;
+  openedBy?: string;
+  openedDate?: string;
+  stories?: unknown[];
+  tasks?: unknown[];
+  [key: string]: unknown;
+}
+
 export interface ZenTaoPagination<T> {
   page: number;
   total: number;
@@ -74,6 +113,8 @@ export interface ZenTaoPagination<T> {
   stories?: T[];
   plans?: T[];
   tasks?: T[];
+  projects?: T[];
+  executions?: T[];
 }
 
 export interface ZenTaoTask {

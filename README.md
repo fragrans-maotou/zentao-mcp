@@ -243,6 +243,92 @@ npm run test:integration
   - `desc` (string, 可选)：任务描述或实现要求
 - **底层接口**：`PUT {ZENTAO_BASE}/api.php/v1/tasks/{task_id}`
 
+### 6. 执行/迭代领域 (`src/tools/execution.ts`)
+
+#### `link_story_to_execution` (需求关联到项目执行/迭代)
+- **说明**：将已生成或创建的需求关联到指定项目执行/迭代（Execution/Sprint）中。对应禅道 `execution` 模块的 `linkStory` 方法。
+  - **核心特性**：支持单个或批量需求关联（`story_ids`）；若调用方未提供 `products` 映射，工具**自动查询每个需求所属的 `product` 并智能补全**生成 `products[storyId] = productId`；
+  - **认证机制**：自动携带 Web 会话凭证（通过 Header `Cookie: zentaosid=...` 与 URL 参数双重注入），触发并在需求历史动态中记录 `linked2execution` 动作；
+  - **全量回查**：关联成功后自动回查该执行下的最新需求列表并全量返回。
+- **参数**：
+  - `execution_id` (number, 必填)：目标执行/迭代 ID（例如 1507）
+  - `story_ids` (number 或 number[], 必填)：需求 ID 或需求 ID 列表（例如 `[47536, 47537]`）
+  - `products` (Record<string, number>, 可选)：需求 ID 到产品 ID 的映射（如不提供则自动智能填充）
+- **底层请求**：`POST {ZENTAO_BASE}/execution-linkStory-{executionID}.json`（自动回退到动态路由与 RESTful 端点）
+
+#### `list_executions` (获取执行列表)
+- **说明**：获取执行/迭代列表（可按项目 ID 筛选、分页与状态筛选），便于获取执行 ID 以便关联需求或拆解任务。
+- **参数**：
+  - `project_id` (number, 可选)：所属项目 ID（可选，传则查询指定项目下的执行）
+  - `page` (number, 可选, 默认 1)：页码
+  - `limit` (number, 可选, 默认 20)：每页条数
+  - `status` (string, 可选)：状态筛选（如 wait, doing, suspended, closed）
+- **底层接口**：`GET {ZENTAO_BASE}/api.php/v1/projects/{project_id}/executions` 或 `GET .../executions`
+
+#### `get_execution` (获取执行详情)
+- **说明**：根据执行 ID 获取单个执行/迭代（Sprint/Execution）的详细信息（名称、项目、状态、起止日期等）。
+- **参数**：
+  - `execution_id` (number, 必填)：执行 ID
+- **底层接口**：`GET {ZENTAO_BASE}/api.php/v1/executions/{execution_id}`
+
+#### `list_execution_stories` (获取执行需求列表)
+- **说明**：获取指定执行/迭代下已关联的所有研发需求列表。
+- **参数**：
+  - `execution_id` (number, 必填)：执行 ID
+  - `page` (number, 可选, 默认 1)：页码
+  - `limit` (number, 可选, 默认 20)：每页条数
+- **底层接口**：`GET {ZENTAO_BASE}/api.php/v1/executions/{execution_id}/stories`
+
+---
+
+### 7. 项目领域 (`src/tools/project.ts`)
+
+#### `list_projects` (获取项目列表)
+- **说明**：获取禅道项目列表（支持分页与状态筛选），便于获取项目 ID (project_id) 以便查看其下的执行或需求。
+- **参数**：
+  - `page` (number, 可选, 默认 1)：页码
+  - `limit` (number, 可选, 默认 20)：每页条数
+  - `status` (string, 可选)：项目状态（如 wait, doing, suspended, closed）
+- **底层接口**：`GET {ZENTAO_BASE}/api.php/v1/projects`
+
+#### `get_project` (获取项目详情)
+- **说明**：根据项目 ID 获取单个禅道项目的详细信息（包含项目名称、代号、状态、负责人 PM、起止日期等）。
+- **参数**：
+  - `project_id` (number, 必填)：项目 ID
+- **底层接口**：`GET {ZENTAO_BASE}/api.php/v1/projects/{project_id}`
+
+#### `list_project_executions` (获取项目下的执行列表)
+- **说明**：获取指定项目下的所有执行/迭代（Sprint/Execution）列表。
+- **参数**：
+  - `project_id` (number, 必填)：项目 ID
+  - `page` (number, 可选, 默认 1)：页码
+  - `limit` (number, 可选, 默认 20)：每页条数
+- **底层接口**：`GET {ZENTAO_BASE}/api.php/v1/projects/{project_id}/executions`
+
+#### `list_project_stories` (获取项目关联需求列表)
+- **说明**：获取指定项目下关联的所有研发需求列表。
+- **参数**：
+  - `project_id` (number, 必填)：项目 ID
+  - `page` (number, 可选, 默认 1)：页码
+  - `limit` (number, 可选, 默认 20)：每页条数
+- **底层接口**：`GET {ZENTAO_BASE}/api.php/v1/projects/{project_id}/stories`
+
+---
+
+### 8. 安全防御策略与拦截保护 (`src/tools/safety.ts`)
+
+> [!CAUTION]
+> **数据资产保护原则**：遵循企业研发管理规范，涉及需求、任务、执行、项目的物理删除与生命周期关闭属于高危破坏性操作，必须在禅道 Web 界面进行双人复核或管理员审批，MCP 服务严格禁止执行底层删除与关闭动作。
+
+服务内以下工具已配置**强制安全拦截**，调用时不会向禅道服务器发送任何破坏性请求，统一返回安全拦截警告及直接跳转的 Web 操作链接：
+- `delete_story`: 拦截需求删除，引导至禅道 Web 需求视图
+- `close_story`: 拦截需求关闭，引导至禅道 Web 需求关闭操作流
+- `delete_task`: 拦截任务删除，保护工时记录与燃尽图历史
+- `close_task`: 拦截任务关闭，引导前往 Web 进行验收与关闭
+- `delete_execution`: 拦截执行/迭代删除，保护迭代产出与关联项
+- `delete_project`: 拦截项目删除，严禁脚本化销毁项目
+- `unlink_story_from_execution`: 拦截从迭代中移除需求，引导在执行视图中手动调整
+
 ---
 
 ## 目录结构
@@ -260,19 +346,26 @@ zentao/
 │   └── tools/           # 按业务领域拆分的工具目录
 │       ├── auth.ts      # 认证领域：login
 │       ├── product.ts   # 产品领域：list_products, get_product
+│       ├── project.ts   # 项目领域：list_projects, get_project, list_project_executions, list_project_stories
+│       ├── execution.ts # 执行领域：link_story_to_execution, list_executions, get_execution, list_execution_stories
 │       ├── plan.ts      # 计划领域：list_product_plans, get_plan, link_story_to_plan
 │       ├── story.ts     # 需求领域：create_story, get_story, list_stories, change_story, update_story
 │       ├── task.ts      # 任务领域：create_task, get_task, update_task
+│       ├── safety.ts    # 安全防御：高危删除与关闭操作自动拦截与 Web 指引
 │       └── index.ts     # 统一汇聚注册导出
 └── test/
     ├── helper.js        # 测试辅助公共函数 (MockServer / McpClient)
     ├── unit/            # Mock 单元测试
     │   ├── auth.test.js
     │   ├── product.test.js
+    │   ├── project.test.js
+    │   ├── execution.test.js
     │   ├── plan.test.js
     │   ├── story.test.js
-    │   └── task.test.js
+    │   ├── task.test.js
+    │   └── safety.test.js
     └── integration/     # 依赖外部环境的集成测试
         └── live.test.js
 ```
+
 
