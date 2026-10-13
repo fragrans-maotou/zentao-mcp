@@ -336,7 +336,31 @@ npm run test:integration
 
 ---
 
-### 8. 安全防御策略与拦截保护 (`src/tools/safety.ts`)
+### 8. 富文本图片服务 (`src/tools/file.ts`)
+
+#### `upload_image` (上传富文本图片)
+- **说明**：上传本地图片文件或 Base64 编码数据到禅道富文本图片服务（对应 Web 端的 `file-ajaxPasteImg` 接口）。上传成功后返回已持久化的 `<img>` 标签、图片访问 URL 与文件 ID，**可直接嵌入需求描述 (`spec`)、验收标准 (`verify`) 等富文本字段中**。
+- **限制说明**：仅支持图片格式（`png, jpg, jpeg, gif, webp, svg, bmp`），严格防御并拒绝非图片类型附件（如 zip 压缩包、文档等）。
+- **参数**：
+  - `image_path` (string, 可选)：本地图片完整路径（如 `C:/images/demo.png`）
+  - `image_base64` (string, 可选)：图片的 Base64 字符串或 Data URL（如 `data:image/png;base64,...`）
+  - `alt` (string, 可选)：图片替代说明文字 (alt 属性，默认为空)
+- **底层请求**：`POST {ZENTAO_BASE}/file-ajaxPasteImg-{uid}.html`
+- **返回结果**：
+  ```json
+  {
+    "success": true,
+    "file_id": 320907,
+    "url": "http://your-zentao-host/zentao/file-read-320907.png",
+    "relative_url": "/zentao/file-read-320907.png",
+    "html": "<img src=\"/zentao/file-read-320907.png\" alt=\"\" />",
+    "message": "图片上传成功，可直接将 html 字段内容嵌入需求描述(spec)或验收标准(verify)中使用"
+  }
+  ```
+
+---
+
+### 9. 安全防御策略与拦截保护 (`src/tools/safety.ts`)
 
 > [!CAUTION]
 > **数据资产保护原则**：遵循企业研发管理规范，涉及需求、任务、执行、项目的物理删除与生命周期关闭属于高危破坏性操作，必须在禅道 Web 界面进行双人复核或管理员审批，MCP 服务严格禁止执行底层删除与关闭动作。
@@ -363,6 +387,7 @@ zentao/
 ├── src/
 │   ├── index.ts         # MCP 服务注册与 stdio 启动
 │   ├── client.ts        # 底层 HTTP 封装、Token 拦截与 UTF-8 BOM 清洗
+│   ├── storyPreserve.ts # 需求属性保护、时区转换与草稿表单构造
 │   ├── types.ts         # 禅道相关的核心接口类型定义
 │   └── tools/           # 按业务领域拆分的工具目录
 │       ├── auth.ts      # 认证领域：login
@@ -370,8 +395,9 @@ zentao/
 │       ├── project.ts   # 项目领域：list_projects, get_project, list_project_executions, list_project_stories
 │       ├── execution.ts # 执行领域：link_story_to_execution, list_executions, get_execution, list_execution_stories
 │       ├── plan.ts      # 计划领域：list_product_plans, get_plan, link_story_to_plan
-│       ├── story.ts     # 需求领域：create_story, get_story, list_stories, change_story, update_story
+│       ├── story.ts     # 需求领域：create_story, get_story, list_stories, change_story, update_story, edit_draft_story
 │       ├── task.ts      # 任务领域：create_task, get_task, update_task
+│       ├── file.ts      # 文件图片：upload_image (富文本图片上传与引用生成)
 │       ├── safety.ts    # 安全防御：高危删除与关闭操作自动拦截与 Web 指引
 │       └── index.ts     # 统一汇聚注册导出
 └── test/
@@ -384,6 +410,7 @@ zentao/
     │   ├── plan.test.js
     │   ├── story.test.js
     │   ├── task.test.js
+    │   ├── file.test.js
     │   └── safety.test.js
     └── integration/     # 依赖外部环境的集成测试
         └── live.test.js

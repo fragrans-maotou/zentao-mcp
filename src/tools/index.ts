@@ -6,6 +6,7 @@ import { registerProjectTools } from "./project.js";
 import { registerExecutionTools } from "./execution.js";
 import { registerStoryTools } from "./story.js";
 import { registerTaskTools } from "./task.js";
+import { registerFileTools } from "./file.js";
 import { registerSafetyDefensiveTools } from "./safety.js";
 
 export function registerTools(server: McpServer) {
@@ -16,6 +17,7 @@ export function registerTools(server: McpServer) {
   registerPlanTools(server);
   registerStoryTools(server);
   registerTaskTools(server);
+  registerFileTools(server);
   registerSafetyDefensiveTools(server);
 }
 
