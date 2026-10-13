@@ -413,3 +413,192 @@ test("unit/story: 未配置账号密码且未登录时调用返回登录提示",
     await client.close();
   }
 });
+
+test("unit/story: edit_draft_story 直改草稿需求并携带 lastEditedDate 防并发编辑令牌与 Cookie", { timeout: 15_000 }, async () => {
+  const captured = { form: null, formBody: "" };
+  const currentStory = {
+    id: 47536,
+    product: 48,
+    branch: 0,
+    module: 2,
+    plan: 10,
+    title: "原草稿标题",
+    status: "draft",
+    stage: "wait",
+    spec: "原需求描述",
+    verify: "原验收标准",
+    assignedTo: "developer1",
+    lastEditedDate: "2026-10-13 10:34:25",
+  };
+
+  const { server, base } = await setupMockServer(async (req, res) => {
+    if (req.method === "GET" && req.url.startsWith("/zentao/api.php/v1/stories/47536")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          ...currentStory,
+          spec: captured.form ? "更新后的详细需求描述" : currentStory.spec,
+          verify: captured.form ? "更新后的验收标准" : currentStory.verify,
+        })
+      );
+      return;
+    }
+
+    if (req.method === "POST" && req.url.includes("story-edit-47536")) {
+      captured.form = {
+        url: req.url,
+        headers: req.headers,
+      };
+      captured.formBody = await readBody(req);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ result: "success", message: "保存成功" }));
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  const client = await connectMcp({
+    ZENTAO_BASE: base,
+    ZENTAO_ACCOUNT: "test_user",
+    ZENTAO_PASSWORD: "test_password",
+  });
+
+  try {
+    const result = await client.callTool({
+      name: "edit_draft_story",
+      arguments: {
+        story_id: 47536,
+        spec: "更新后的详细需求描述",
+        verify: "更新后的验收标准",
+      },
+    });
+
+    assert.notEqual(result.isError, true);
+    assert.ok(captured.form, "应当调用 story-edit Web 表单接口");
+    assert.ok(captured.form.headers.cookie.includes("zentaosid=mock-token"));
+
+    // 验证必须包含从原需求提取的 lastEditedDate 防并发编辑令牌
+    assert.ok(
+      captured.formBody.includes("lastEditedDate=2026-10-13+10%3A34%3A25") ||
+      captured.formBody.includes("lastEditedDate=2026-10-13%2010%3A34%3A25")
+    );
+    // 验证包含 spec 与 verify
+    assert.ok(captured.formBody.includes("spec="));
+    assert.ok(captured.formBody.includes("verify="));
+    // 验证包含状态 draft
+    assert.ok(captured.formBody.includes("status=draft"));
+
+    const data = JSON.parse(result.content[0].text);
+    assert.equal(data.id, 47536);
+    assert.equal(data.spec, "更新后的详细需求描述");
+  } finally {
+    await client.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("unit/story: update_story 传入 spec 和 verify 时自动通过 Web story-edit 提交并避免被静默忽略", { timeout: 15_000 }, async () => {
+  let webFormCalled = false;
+  const currentStory = {
+    id: 47536,
+    product: 48,
+    title: "草稿标题",
+    status: "draft",
+    spec: "旧描述",
+    verify: "旧分析",
+    lastEditedDate: "2026-10-13 10:34:25",
+  };
+
+  const { server, base } = await setupMockServer(async (req, res) => {
+    if (req.method === "GET" && req.url.startsWith("/zentao/api.php/v1/stories/47536")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          ...currentStory,
+          spec: webFormCalled ? "新描述内容" : currentStory.spec,
+        })
+      );
+      return;
+    }
+
+    if (req.method === "POST" && req.url.includes("story-edit-47536")) {
+      webFormCalled = true;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ result: "success" }));
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  const client = await connectMcp({
+    ZENTAO_BASE: base,
+    ZENTAO_ACCOUNT: "test_user",
+    ZENTAO_PASSWORD: "test_password",
+  });
+
+  try {
+    const result = await client.callTool({
+      name: "update_story",
+      arguments: {
+        story_id: 47536,
+        spec: "新描述内容",
+        pri: 2,
+      },
+    });
+
+    assert.notEqual(result.isError, true);
+    assert.equal(webFormCalled, true, "传入 spec 时必须触发 Web 端 story-edit 表单提交");
+  } finally {
+    await client.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("unit/story: update_story 在 Web 编辑页全部失败时中止，避免把 spec 未保存当成成功", { timeout: 15_000 }, async () => {
+  const { server, base } = await setupMockServer(async (req, res) => {
+    if (req.method === "GET" && req.url.startsWith("/zentao/api.php/v1/stories/47536")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: 47536,
+          product: 48,
+          title: "草稿标题",
+          status: "draft",
+          spec: "旧描述",
+          lastEditedDate: "2026-10-13 10:34:25",
+        })
+      );
+      return;
+    }
+
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "not found" }));
+  });
+
+  const client = await connectMcp({
+    ZENTAO_BASE: base,
+    ZENTAO_ACCOUNT: "test_user",
+    ZENTAO_PASSWORD: "test_password",
+  });
+
+  try {
+    const result = await client.callTool({
+      name: "update_story",
+      arguments: {
+        story_id: 47536,
+        spec: "新描述内容",
+      },
+    });
+
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /无法通过 Web 编辑页保存需求 #47536/);
+  } finally {
+    await client.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+

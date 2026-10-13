@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { asError, postZentaoForm, zentaoApi, zentaoOk } from "../client.js";
-import { customFieldsFromStory, formContentFromStory, isCustomFieldKey, preservedAttributes, STANDARD_UPDATE_KEYS, } from "../storyPreserve.js";
+import { buildStoryEditForm, preservedAttributes, shouldSubmitStoryEditForm, STANDARD_UPDATE_KEYS, } from "../storyPreserve.js";
 export function registerStoryTools(server) {
     registerCreateStory(server);
     registerGetStory(server);
     registerListStories(server);
     registerChangeStory(server);
     registerUpdateStory(server);
+    registerEditDraftStory(server);
 }
 function registerCreateStory(server) {
     server.tool("create_story", "在禅道中创建新需求（Story）。支持指定产品ID、需求标题、描述、验收标准、优先级等。业务流程推荐：创建时 plan 可留空，待需求生成完成后，调用 list_product_plans 查询计划列表，向用户确认后通过 link_story_to_plan 关联到指定产品计划。", {
@@ -144,8 +145,93 @@ function registerChangeStory(server) {
         }
     });
 }
+async function submitStoryEditForm(storyId, formBody) {
+    const paths = [
+        `/story-edit-${storyId}-default-story.html`,
+        `/index.php?m=story&f=edit&storyID=${storyId}&from=default-story`,
+        `/story-edit-${storyId}.html`,
+    ];
+    let lastError;
+    for (const path of paths) {
+        try {
+            await postZentaoForm(path, formBody);
+            return;
+        }
+        catch (err) {
+            lastError = err;
+        }
+    }
+    const detail = lastError instanceof Error ? lastError.message : String(lastError ?? "未知错误");
+    throw new Error(`无法通过 Web 编辑页保存需求 #${storyId}：${detail}`);
+}
+async function applyStoryUpdates(story_id, updates) {
+    const inputUpdates = {};
+    for (const [key, value] of Object.entries(updates)) {
+        if (value !== undefined && value !== null) {
+            inputUpdates[key] = value;
+        }
+    }
+    if (Object.keys(inputUpdates).length === 0) {
+        return asError(new Error("请至少提供一个要编辑更新的字段"));
+    }
+    try {
+        let currentStory;
+        try {
+            currentStory = await zentaoApi(`/stories/${story_id}`);
+        }
+        catch (err) {
+            const detail = err instanceof Error ? err.message : String(err);
+            return asError(new Error(`无法读取需求 #${story_id} 的当前详情，已中止更新以免覆盖已有字段：${detail}`));
+        }
+        const preserved = preservedAttributes(currentStory);
+        // 判断是否需要通过 Web 端 story-edit 表单提交：
+        // 当包含 spec(需求描述)、verify(验收标准/需求分析)、自定义扩展字段、或草稿状态修改时，
+        // 由于 REST API PUT 会静默忽略富文本字段，必须走 Web 编辑页接口，并带上 lastEditedDate 防并发编辑令牌
+        const needWebForm = shouldSubmitStoryEditForm(currentStory, inputUpdates);
+        if (needWebForm) {
+            const formBody = buildStoryEditForm(currentStory, inputUpdates);
+            await submitStoryEditForm(story_id, formBody);
+        }
+        // 针对标准属性字段（如 pri, module, assignedTo, plan 等），同步调用 REST API PUT
+        const restBody = { ...preserved };
+        for (const [k, v] of Object.entries(inputUpdates)) {
+            if (STANDARD_UPDATE_KEYS.includes(k) &&
+                k !== "spec" &&
+                k !== "verify") {
+                restBody[k] = v;
+            }
+        }
+        if (Object.keys(restBody).length > 0) {
+            try {
+                await zentaoApi(`/stories/${story_id}`, {
+                    method: "PUT",
+                    body: restBody,
+                });
+            }
+            catch (err) {
+                if (!needWebForm)
+                    throw err;
+            }
+        }
+        // 更新后全量回查最新需求详情并返回
+        let latestStory;
+        try {
+            latestStory = await zentaoApi(`/stories/${story_id}`);
+        }
+        catch { }
+        return zentaoOk(latestStory ?? {
+            ...currentStory,
+            ...restBody,
+            ...inputUpdates,
+            id: story_id,
+        });
+    }
+    catch (err) {
+        return asError(err);
+    }
+}
 function registerUpdateStory(server) {
-    server.tool("update_story", "编辑/更新需求属性（自动先查后合，绝不删除或清空所属计划 plan 等未修改字段；所有详情完整返回，修改的返回修改后的值，未修改的完整保留）。支持更新计划、优先级、模块、指派人、需求类型、概要设计、开发自测等属性。", {
+    server.tool("update_story", "编辑/更新需求属性与内容（自动先查后合，绝不删除或清空所属计划 plan 等未修改字段；已彻底解决禅道 REST PUT 忽略 spec/verify 的问题，自动注入 lastEditedDate 防并发令牌与 Web Cookie 会话，支持修改富文本描述、验收标准、计划、优先级、模块、指派人等所有字段，全量返回最新详情）。", {
         story_id: z.number().int().describe("需要更新的需求 ID"),
         plan: z.number().int().optional().describe("关联的产品计划 ID（若不修改请留空，原计划将被自动完整保留；若需修改请传入新计划 ID）"),
         pri: z.number().int().min(1).max(4).optional().describe("优先级：1 (最高) 到 4 (最低)"),
@@ -158,74 +244,36 @@ function registerUpdateStory(server) {
         source: z.string().optional().describe("需求来源"),
         estimate: z.number().optional().describe("预计工时 (小时)"),
         title: z.string().optional().describe("研发需求名称（标题）"),
-        spec: z.string().optional().describe("需求描述详细内容"),
-        verify: z.string().optional().describe("需求分析 / 验收标准"),
+        spec: z.string().optional().describe("需求描述详细内容 (富文本已支持通过 Web 编辑页直接保存)"),
+        verify: z.string().optional().describe("需求分析 / 验收标准 (富文本已支持通过 Web 编辑页直接保存)"),
         tthldesign: z.string().optional().describe("概要设计 (HLD)"),
         ttdevtest: z.string().optional().describe("开发自测说明"),
         bz: z.string().optional().describe("备注 (bz)"),
         ttmedicalrisk: z.string().optional().describe("医疗风险和数据安全*"),
         ttisdatasafe: z.string().optional().describe("需数据安全评审（\"1\" 为是，\"0\" 为否）"),
     }, async ({ story_id, ...updates }) => {
-        const inputUpdates = {};
-        for (const [key, value] of Object.entries(updates)) {
-            if (value !== undefined && value !== null) {
-                inputUpdates[key] = value;
-            }
-        }
-        if (Object.keys(inputUpdates).length === 0) {
-            return asError(new Error("请至少提供一个要编辑更新的字段"));
-        }
-        try {
-            let currentStory;
-            try {
-                currentStory = await zentaoApi(`/stories/${story_id}`);
-            }
-            catch (err) {
-                const detail = err instanceof Error ? err.message : String(err);
-                return asError(new Error(`无法读取需求 #${story_id} 的当前详情，已中止更新以免覆盖已有字段：${detail}`));
-            }
-            const preserved = preservedAttributes(currentStory);
-            const restBody = { ...preserved };
-            for (const [k, v] of Object.entries(inputUpdates)) {
-                if (STANDARD_UPDATE_KEYS.includes(k)) {
-                    restBody[k] = v;
-                }
-            }
-            const hasCustom = Object.keys(inputUpdates).some(isCustomFieldKey);
-            if (hasCustom) {
-                const formBody = {
-                    ...formContentFromStory(currentStory),
-                    ...preserved,
-                    ...customFieldsFromStory(currentStory),
-                    ...inputUpdates,
-                };
-                try {
-                    await postZentaoForm(`/story-edit-${story_id}.json`, formBody);
-                }
-                catch {
-                    // 表单接口不可用时仍继续 REST 更新标准字段
-                }
-            }
-            if (Object.keys(restBody).length > 0) {
-                await zentaoApi(`/stories/${story_id}`, {
-                    method: "PUT",
-                    body: restBody,
-                });
-            }
-            let latestStory;
-            try {
-                latestStory = await zentaoApi(`/stories/${story_id}`);
-            }
-            catch { }
-            return zentaoOk(latestStory ?? {
-                ...currentStory,
-                ...restBody,
-                ...inputUpdates,
-                id: story_id,
-            });
-        }
-        catch (err) {
-            return asError(err);
-        }
+        return applyStoryUpdates(story_id, updates);
+    });
+}
+function registerEditDraftStory(server) {
+    server.tool("edit_draft_story", "直接编辑草稿需求内容（直改 spec 描述与 verify 验收标准，无版本号上升与重新评审副作用）。对应禅道 Web 端 story-edit 页面机制。自动提取并携带 lastEditedDate 防并发编辑令牌与 Web 会话 Cookie，支持修改需求描述、验收标准、标题、优先级、模块、类别、所属计划等，保存后全量返回最新详情。", {
+        story_id: z.number().int().describe("需要编辑的草稿需求 ID"),
+        title: z.string().optional().describe("需求标题"),
+        spec: z.string().optional().describe("需求详细描述 (spec)"),
+        verify: z.string().optional().describe("需求分析 / 验收标准 (verify)"),
+        pri: z.number().int().min(1).max(4).optional().describe("优先级：1 到 4"),
+        module: z.number().int().optional().describe("所属模块 ID"),
+        plan: z.number().int().optional().describe("关联的产品计划 ID"),
+        assignedTo: z.string().optional().describe("指派给的用户账号"),
+        category: z
+            .enum(["feature", "interface", "performance", "safe", "experience", "other"])
+            .optional()
+            .describe("需求类型"),
+        estimate: z.number().optional().describe("预计工时 (小时)"),
+        tthldesign: z.string().optional().describe("概要设计 (HLD)"),
+        ttdevtest: z.string().optional().describe("开发自测说明"),
+        bz: z.string().optional().describe("备注 (bz)"),
+    }, async ({ story_id, ...updates }) => {
+        return applyStoryUpdates(story_id, updates);
     });
 }

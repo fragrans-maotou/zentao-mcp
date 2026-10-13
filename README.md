@@ -158,10 +158,13 @@ npm run test:integration
   - `comment` (string, 可选)：变更原因/备注说明
 - **底层接口**：`PUT {ZENTAO_BASE}/api.php/v1/stories/{story_id}/change`
 
-#### `update_story` (更新需求属性)
-- **说明**：编辑/更新需求属性字段（采用先查后合机制，自动保留未修改的字段，绝不冲掉或清空原有所属计划 `plan`；修改的返回修改后的值，未修改的完整保留）。
+#### `update_story` (更新需求属性与内容)
+- **说明**：编辑/更新需求属性字段与内容。采用**先查后合（Fetch-and-Merge）保护策略**，自动保留未修改的字段，绝不冲掉或清空原有所属计划 `plan`；已彻底解决禅道 RESTful API `PUT` 静默忽略 `spec`（需求描述）与 `verify`（验收标准）的问题，当传入富文本或草稿修改时，自动通过 Web 端 `story-edit` 提交并携带 `lastEditedDate` 防并发编辑令牌与 Web Cookie 会话，修改的返回修改后的值，未修改的完整保留。
 - **参数**：
   - `story_id` (number, 必填)：需求 ID
+  - `title` (string, 可选)：研发需求名称（标题）
+  - `spec` (string, 可选)：需求详细描述 (富文本已支持通过 Web 编辑页直接保存)
+  - `verify` (string, 可选)：需求分析 / 验收标准 (富文本已支持通过 Web 编辑页直接保存)
   - `plan` (number, 可选)：关联计划 ID（若不修改请留空，原计划将自动完整保留）
   - `pri` (number, 可选)：优先级 (1-4)
   - `module` (number, 可选)：所属模块 ID
@@ -174,7 +177,25 @@ npm run test:integration
   - `bz` (string, 可选)：备注
   - `ttmedicalrisk` (string, 可选)：医疗风险和数据安全
   - `ttisdatasafe` (string, 可选)：需数据安全评审 ("1"/"0")
-- **底层接口**：`PUT {ZENTAO_BASE}/api.php/v1/stories/{story_id}`
+- **底层接口**：Web 端 `POST {ZENTAO_BASE}/story-edit-{storyID}-default-story.html`（防并发保护）+ REST `PUT {ZENTAO_BASE}/api.php/v1/stories/{story_id}`
+
+#### `edit_draft_story` (直接编辑草稿需求内容)
+- **说明**：**草稿状态需求直改专属工具**。直接修改草稿需求的描述（`spec`）、验收标准（`verify`）、标题、优先级、模块、所属计划等，**无版本号上升与重新评审等副作用**。完全对接禅道 Web 端 `story-edit` 页面表单提交机制，自动获取并注入 `lastEditedDate`（防并发冲突令牌）、`status: 'draft'`、所属产品、分支等隐藏必要字段，并携带 Web 会话 Cookie，保存后全量回查并返回最新需求详情。
+- **参数**：
+  - `story_id` (number, 必填)：需要编辑的草稿需求 ID
+  - `title` (string, 可选)：需求标题
+  - `spec` (string, 可选)：需求详细描述 (spec)
+  - `verify` (string, 可选)：需求分析 / 验收标准 (verify)
+  - `pri` (number, 可选)：优先级 1~4
+  - `module` (number, 可选)：所属模块 ID
+  - `plan` (number, 可选)：关联的产品计划 ID
+  - `assignedTo` (string, 可选)：指派给的用户账号
+  - `category` (string, 可选)：需求类型
+  - `estimate` (number, 可选)：预计工时
+  - `tthldesign` (string, 可选)：概要设计 (HLD)
+  - `ttdevtest` (string, 可选)：开发自测说明
+  - `bz` (string, 可选)：备注
+- **底层接口**：`POST {ZENTAO_BASE}/story-edit-{storyID}-default-story.html`（备选动态路由 `m=story&f=edit`）
 
 ---
 
